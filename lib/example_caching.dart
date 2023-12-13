@@ -53,25 +53,29 @@ class MyAppState extends State<MyApp> with WidgetsBindingObserver {
 
   Future<void> _init() async {
     final uri = Uri.parse(
-      // Supports range requests:
       'https://a71.easemob.com/711006205/1174222/chatfiles/e4ebd520-9815-11ee-be0d-cdcbc4d27c9e',
-      // Doesn't support range requests:
-      //"https://filesamples.com/samples/audio/mp3/sample4.mp3",
     );
+
     final file = await _getCacheFile(uri);
+
     final audioSource = LockCachingAudioSource(
       uri,
       cacheFile: file,
     );
+
     print(file.path);
+
     _audioSource = audioSource;
 
     final session = await AudioSession.instance;
+
     await session.configure(const AudioSessionConfiguration.speech());
+
     _player.playbackEventStream.listen((event) {},
         onError: (Object e, StackTrace stackTrace) {
       print('A stream error occurred: $e');
     });
+
     try {
       // Use resolve() if you want to obtain a UriAudioSource pointing directly
       // to the cache file.
