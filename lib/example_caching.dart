@@ -5,12 +5,19 @@
 //
 // flutter run -t lib/example_caching.dart
 
+import 'dart:convert';
+import 'dart:io';
+
 import 'package:audio_session/audio_session.dart';
+import 'package:crypto/crypto.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:just_audio/just_audio.dart';
-import 'package:just_audio_example/common.dart';
+import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
 import 'package:rxdart/rxdart.dart';
+
+import 'package:just_audio_example/common.dart';
 
 void main() => runApp(const MyApp());
 
@@ -23,12 +30,7 @@ class MyApp extends StatefulWidget {
 
 class MyAppState extends State<MyApp> with WidgetsBindingObserver {
   final _player = AudioPlayer();
-  final _audioSource = LockCachingAudioSource(Uri.parse(
-    // Supports range requests:
-    "https://dovetail.prxu.org/70/66673fd4-6851-4b90-a762-7c0538c76626/CoryCombs_2021T_VO_Intro.mp3",
-    // Doesn't support range requests:
-    //"https://filesamples.com/samples/audio/mp3/sample4.mp3",
-  ));
+  LockCachingAudioSource? _audioSource;
 
   @override
   void initState() {
@@ -40,7 +42,30 @@ class MyAppState extends State<MyApp> with WidgetsBindingObserver {
     _init();
   }
 
+  Future<Directory> _getCacheDir() async => Directory(
+      p.join((await getTemporaryDirectory()).path, 'just_audio_cache'));
+
+  Future<File> _getCacheFile(final Uri uri) async => File(p.joinAll([
+        (await _getCacheDir()).path,
+        'remote',
+        '${sha256.convert(utf8.encode(uri.toString()))}.m4a',
+      ]));
+
   Future<void> _init() async {
+    final uri = Uri.parse(
+      // Supports range requests:
+      'https://a71.easemob.com/711006205/1174222/chatfiles/e4ebd520-9815-11ee-be0d-cdcbc4d27c9e',
+      // Doesn't support range requests:
+      //"https://filesamples.com/samples/audio/mp3/sample4.mp3",
+    );
+    final file = await _getCacheFile(uri);
+    final audioSource = LockCachingAudioSource(
+      uri,
+      cacheFile: file,
+    );
+    print(file.path);
+    _audioSource = audioSource;
+
     final session = await AudioSession.instance;
     await session.configure(const AudioSessionConfiguration.speech());
     _player.playbackEventStream.listen((event) {},
@@ -50,16 +75,14 @@ class MyAppState extends State<MyApp> with WidgetsBindingObserver {
     try {
       // Use resolve() if you want to obtain a UriAudioSource pointing directly
       // to the cache file.
-      // await _player.setAudioSource(await _audioSource.resolve());
-
-      const remoteUrl =
-          'https://a71.easemob.com/711006205/1174222/chatfiles/e4ebd520-9815-11ee-be0d-cdcbc4d27c9e';
-      const updatedUrl = '$remoteUrl.m4a';
-
-      await _player.setUrl(updatedUrl);
+      await _player.setAudioSource(await _audioSource!.resolve());
     } catch (e) {
       print("Error loading audio source: $e");
     }
+
+    Future.delayed(const Duration(seconds: 1), () {
+      setState(() {});
+    });
   }
 
   @override
@@ -86,7 +109,7 @@ class MyAppState extends State<MyApp> with WidgetsBindingObserver {
   Stream<PositionData> get _positionDataStream =>
       Rx.combineLatest3<Duration, double, Duration?, PositionData>(
           _player.positionStream,
-          _audioSource.downloadProgressStream,
+          _audioSource?.downloadProgressStream ?? const Stream.empty(),
           _player.durationStream,
           (position, downloadProgress, reportedDuration) {
         final duration = reportedDuration ?? Duration.zero;
@@ -122,7 +145,7 @@ class MyAppState extends State<MyApp> with WidgetsBindingObserver {
                 },
               ),
               ElevatedButton(
-                onPressed: _audioSource.clearCache,
+                onPressed: _audioSource?.clearCache,
                 child: const Text('Clear cache'),
               ),
             ],
